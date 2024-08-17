@@ -43,23 +43,24 @@ const insertCard = async (date, number, color) => {
 };
 
 const setupPuppeteer = async () => {
-	const browser = await puppeteer.launch({
-	  args: [
-		"--disable-setuid-sandbox",
-		"--no-sandbox",
-		"--single-process",
-		"--no-zygote",
-	  ],
-	  headless: true,  // Asegúrate de que esta opción esté presente
-	  executablePath:
-		process.env.NODE_ENV === "production"
-		  ? process.env.PUPPETEER_EXECUTABLE_PATH
-		  : puppeteer.executablePath(),
-	});
-
+  console.log('Puppeteer executable path:', process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath());
+  
+  const browser = await puppeteer.launch({
+    args: [
+      "--disable-setuid-sandbox",
+      "--no-sandbox",
+      "--single-process",
+      "--no-zygote",
+    ],
+    headless: true,  // Asegura que Puppeteer esté en modo sin cabeza
+    executablePath:
+      process.env.NODE_ENV === "production"
+        ? process.env.PUPPETEER_EXECUTABLE_PATH
+        : puppeteer.executablePath(),
+  });
 
   const page = await browser.newPage();
-  await page.goto('https://pancakeswap.finance/prediction?token=BNB', { waitUntil: 'networkidle2' });
+  await page.goto('https://pancakeswap.finance/prediction?token=BNB', { waitUntil: 'networkidle2', timeout: 60000 }); // Aumenta el tiempo de espera
 
   await page.waitForSelector('#responsibility-checkbox');
   await page.click('#responsibility-checkbox');
@@ -70,7 +71,6 @@ const setupPuppeteer = async () => {
 
   return { browser, page };
 };
-
 
 const getID = async (page) => {
   return page.evaluate(() => {
@@ -111,25 +111,20 @@ const getTimer = async (page) => {
 };
 
 let matches = 1;
-let prevColor = null; // Usamos null para el primer caso
+let prevColor = null;
 
 const countMatching = async (color) => {
   if (prevColor === null) {
-    // Si es el primer color, establecemos prevColor y no incrementamos matches
     prevColor = color;
   } else {
     if (color === prevColor) {
-      // Si el color actual es igual al anterior, incrementamos matches
       matches++;
     } else {
-      // Si el color actual es diferente al anterior, reiniciamos matches
       matches = 1;
     }
-    // Actualizamos prevColor con el color actual
     prevColor = color;
   }
 
-  // Aquí puedes realizar cualquier otra acción según lo necesites
   console.log(`Color actual: ${color}, Matches: ${matches}`);
 };
 
@@ -138,10 +133,8 @@ let numeroAnterior = null;
 const checkAndUpdateID = async (page) => {
   const numero = await getID(page);
   const color = await getColor(page);
-  //console.log('Número encontrado:', numero, 'Color:', color);
 
   if (numero !== null && numero !== numeroAnterior) {
-    //console.log('Número actualizado:', numero);
     let colorValue;
     if (color === "rgb(49, 208, 170)") {
       colorValue = 1;
@@ -151,9 +144,9 @@ const checkAndUpdateID = async (page) => {
       colorValue = 3;
     }
     await insertCard(getCurrentDate(), numero, colorValue);
-	io.emit('addCard', { numero, colorValue });
-	countMatching(colorValue);
-	
+    io.emit('addCard', { numero, colorValue });
+    countMatching(colorValue);
+
     numeroAnterior = numero;
     return { numero, color, colorValue };
   }
@@ -164,43 +157,42 @@ const checkAndUpdateID = async (page) => {
 const main = async () => {
   try {
     const { browser, page } = await setupPuppeteer();
-    
+
     let totalClientes = 0;
 
-	io.on('connection', (socket) => {
-	  totalClientes++;
-	  console.log('Nuevo cliente conectado');
-	  console.log('Total de clientes conectados:', totalClientes);
+    io.on('connection', (socket) => {
+      totalClientes++;
+      console.log('Nuevo cliente conectado');
+      console.log('Total de clientes conectados:', totalClientes);
 
-	  // Manejar la desconexión del cliente
-	  socket.on('disconnect', () => {
-		totalClientes--;
-		console.log('Cliente desconectado');
-		console.log('Total de clientes conectados:', totalClientes);
-	  });
-	});
-    
+      socket.on('disconnect', () => {
+        totalClientes--;
+        console.log('Cliente desconectado');
+        console.log('Total de clientes conectados:', totalClientes);
+      });
+    });
+
     setInterval(async () => {
       try {
         const timer = await getTimer(page);
         const updatedData = await checkAndUpdateID(page);
-		const cardCurrentColor = await getCurrentColor(page);
-        
-        if (timer) io.emit('receiveData', {timer, cardCurrentColor});
-        
+        const cardCurrentColor = await getCurrentColor(page);
+
+        if (timer) io.emit('receiveData', { timer, cardCurrentColor });
+
         if (updatedData) {
-          //console.log('Timer:', timer, 'Color:', updatedData.color, 'Valor de color:', updatedData.colorValue, 'ID actualizado:', updatedData.numero);
+          // console.log('Timer:', timer, 'Color:', updatedData.color, 'Valor de color:', updatedData.colorValue, 'ID actualizado:', updatedData.numero);
         } else {
-          //console.log('Timer:', timer, 'Sin actualizaciones de ID');
+          // console.log('Timer:', timer, 'Sin actualizaciones de ID');
         }
       } catch (error) {
         console.error('Error en el intervalo:', error);
       }
     }, 1000);
 
-	const PORT = process.env.PORT || 4000;
+    const PORT = process.env.PORT || 4000;
 
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {  // Asegura que el servidor escucha en 0.0.0.0
       console.log(`Servidor escuchando en el puerto ${PORT}`);
     });
 

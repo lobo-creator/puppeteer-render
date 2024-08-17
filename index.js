@@ -21,6 +21,11 @@ const io = new Server(server, {
 app.use(express.static('public'));
 app.use(express.json());
 
+// Ruta para enviar un saludo
+app.get('/hello', (req, res) => {
+  res.send('¡Hola!');
+});
+
 // Funciones auxiliares
 const getCurrentDate = () => new Date().toISOString().slice(0, 10);
 
